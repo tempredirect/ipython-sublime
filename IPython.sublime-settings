@@ -1,0 +1,7 @@
+{
+    // path to the correct instance of python to use, i.e. can load the
+    // ipython package, if empty will default to searching common locations
+    "python" : "",
+    // can be 'panel' or 'status'
+    "on_error" : "panel"
+}
