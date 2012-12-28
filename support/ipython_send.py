@@ -2,12 +2,19 @@
 
 import sys
 
+sys.path.append("../lib")
+
+import logging
+
 from IPython.zmq.blockingkernelmanager import BlockingKernelManager
 from json import loads
 from os import listdir
 from os.path import expanduser, join
 import re
 import socket
+import struct
+
+from protocol import Connection
 
 # utils
 
@@ -97,7 +104,7 @@ def get_response(km, msg_id):
     while True:
         msg = km.sub_channel.get_msg()
         if verbose:
-            print "---- msg ----"
+            logging.debug("---- msg ----")
             pretty( msg )
         if msg['msg_type'] == 'status':
             if msg['content']['execution_state'] == 'idle':
@@ -115,7 +122,7 @@ def get_response(km, msg_id):
                 "traceback" : extract_traceback(c['traceback']),
                 "error" : '{1}: {2}'.format(traceback, ename, evalue)
             }
-    return (out, error)
+    return ("\n".join(out), error)
 
     # return [m for m in msgs
             # if m['parent_header']['msg_id'] == msg_id]
@@ -139,11 +146,92 @@ def get_object_info(km, word):
 # http://stackoverflow.com/a/3229493/31480
 def pretty(d, indent=0):
    for key, value in d.iteritems():
-      print '\t' * indent + str(key)
+      logging.info('\t' * indent + str(key))
       if isinstance(value, dict):
          pretty(value, indent+1)
       else:
-         print '\t' * (indent+1) + str(value)
+         logging.info( '\t' * (indent+1) + str(value))
+
+class Server:
+
+    def __init__(self, options):
+        self.port = options.port        
+        self.serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+
+    def handle_client(self, clientsocket):
+
+        connection = Connection(clientsocket, verbose = verbose)
+        try:
+            while 1:
+                (msgtype, msg) = connection.read_message()
+                logging.debug( "[%i] [%s]" % (msgtype, msg))
+                if msgtype == 1:
+                    # execute code
+                    
+                    km = initialize_km()
+                    out, error = execute(km, msg)
+                    logging.debug( "[complete] [%s] [%s]" % (out, error))
+
+                    if error is None:
+                        connection.write_message( 2, out)
+                    else:
+                        connection.write_message( 3, error['error'])
+                else:
+                    raise RuntimeError("unknown msgtype : %s" % str(msgtype))
+        except Exception as e:
+            logging.error( str(e))
+            clientsocket.close()
+            
+
+    def run(self):
+        serversocket = self.serversocket
+        serversocket.bind(("127.0.0.1", options.port))
+        serversocket.listen(5)
+        logging.info( "Listening on %s" % str(options.port))
+        try:
+            while 1:
+                (clientsocket,address) = serversocket.accept()
+                self.handle_client(clientsocket)
+        except KeyboardInterrupt as ki:
+            logging.warning( "Exiting" )
+            pass
+
+def main(options):
+    
+    logconfig = {'level': logging.DEBUG if options.verbose else logging.INFO }
+
+    if options.logfile is not None:
+        logconfig['filename'] = options.logfile
+    else:
+        logconfig['stream'] = sys.stdout
+
+    logging.basicConfig(**logconfig)
+
+
+    if options.server:
+        server = Server(options)
+        server.run()
+    else:
+        # print options
+        if options.code is not None:
+            code = options.code
+        else:
+            code = sys.stdin.read()
+
+        verbose = options.verbose
+
+        km = initialize_km()
+        out, error = execute(km, code)
+
+        if len( out ) > 0:
+            print "\n".join(out)    
+        if error is not None:
+            print error['error']
+            sys.exit(1)
+        else:
+            sys.exit(0)
 
 if __name__ == '__main__':
 
@@ -152,25 +240,21 @@ if __name__ == '__main__':
     parser.add_option('-c', dest = 'code', help = 'Code to send to ipython kernel')
     parser.add_option('-v', '--verbose', dest = 'verbose', action='store_true', default=False,
                             help = 'Output verbose debug messages')
-
+    parser.add_option('-s', '--server', dest = 'server', action='store_true', default=False,
+                            help = 'Ignore -c and become a server listening on a port')
+    parser.add_option('-d', '--daemon', dest = 'daemon', action='store_true', default=False,
+                            help = 'Daemonise the process')
+    parser.add_option('-p', '--port', dest = 'port', default=48721, type='int',
+                            help = 'Ignore -c and become a server listening on a port')
+    parser.add_option('--log', dest = 'logfile', default=None, 
+                            help = 'optional Log file')
     (options, args) = parser.parse_args()
 
-    # print options
-    if options.code is not None:
-        code = options.code
+    if options.daemon:
+        import daemon
+
+        with daemon.DaemonContext(detach_process = True):
+            main(options)
+
     else:
-        code = sys.stdin.read()
-
-    verbose = options.verbose
-    
-    km = initialize_km()
-    out, error = execute(km, code)
-
-    if len( out ) > 0:
-        print "\n".join(out)    
-    if error is not None:
-        print error['error']
-        sys.exit(1)
-    else:
-        sys.exit(0)
-
+        main(options)
