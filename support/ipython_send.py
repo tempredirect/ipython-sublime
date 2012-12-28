@@ -11,6 +11,8 @@ import socket
 
 # utils
 
+verbose = False
+
 class IPythonNotFoundException(Exception):
     def __init__(self, value):
         self.value = value
@@ -57,8 +59,9 @@ def strip_color_escapes(s):
 
 def km_from_cfg(cfg):
     km = BlockingKernelManager(**cfg)
-    km.shell_channel.start()
+    km.start_channels()
     km.shell_channel.session.key = km.key
+    km.hb_channel.unpause()
     return km
 
 
@@ -68,13 +71,54 @@ def initialize_km():
         raise IPythonNotFoundException("cannot find alive server")        
     return km_from_cfg(cfg)
 
+def extract_traceback(traceback):
+    # strip ANSI color controls
+    strip = re.compile('\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]')
+    tb = [strip.sub('',t) for t in traceback]
+    if len(tb) == 1:
+        m = re.search(', line (\d+)', tb[0])
+        line = int(m.group(1))
+        return [('<ipython-input>', line, tb[0])]
+    else:
+        result = []
+        for t in tb[1:-1]:
+            m = re.search(r'^(\S+) in (\S+)', t)
+            filename = m.group(1)
+            m = re.search(r'\--+> (\d+)', t)
+            line_num = int(m.group(1))
+            result.append( (filename, line_num, t))
+        return result
 
 def get_response(km, msg_id):
-    msgs = km.shell_channel.get_msgs()
-    while not msgs:
-        msgs = km.shell_channel.get_msgs()
-    return [m for m in msgs
-            if m['parent_header']['msg_id'] == msg_id]
+    
+    success = False
+    out = []
+    error = None
+    while True:
+        msg = km.sub_channel.get_msg()
+        if verbose:
+            print "---- msg ----"
+            pretty( msg )
+        if msg['msg_type'] == 'status':
+            if msg['content']['execution_state'] == 'idle':
+                break
+        elif msg['msg_type'] == 'stream':
+            content = msg['content']
+            out.append("{0}: {1}".format(content['name'], content['data']))            
+        elif msg['msg_type'] == 'pyout':            
+            out.append(msg['content']['data']['text/plain'])
+        elif msg['msg_type'] == 'pyerr':            
+            c = msg['content']
+            ename, evalue = c['ename'],c['evalue']
+            traceback = '\n'.join(c['traceback'])
+            error = {
+                "traceback" : extract_traceback(c['traceback']),
+                "error" : '{1}: {2}'.format(traceback, ename, evalue)
+            }
+    return (out, error)
+
+    # return [m for m in msgs
+            # if m['parent_header']['msg_id'] == msg_id]
 
 
 def execute_code(km, code):
@@ -83,12 +127,8 @@ def execute_code(km, code):
 
 def execute(km, code):
     msg_id = execute_code(km, code)
-    return get_response(km, msg_id)[0] # will only be one response
+    return get_response(km, msg_id)
     
-def is_error( response ):
-    return resp['header']['status'] == 'error'
-
-
 # magic object info
 
 def get_object_info(km, word):
@@ -121,18 +161,16 @@ if __name__ == '__main__':
     else:
         code = sys.stdin.read()
 
-    km = initialize_km()
-    resp = execute(km, code)
+    verbose = options.verbose
     
-    if options.verbose:
-        pretty(resp)
-    if is_error(resp):
-        content = resp['content']
-        print content['evalue']
-        for line in content['traceback']:
-            print line
+    km = initialize_km()
+    out, error = execute(km, code)
+
+    if len( out ) > 0:
+        print "\n".join(out)    
+    if error is not None:
+        print error['error']
         sys.exit(1)
     else:
         sys.exit(0)
-
 
