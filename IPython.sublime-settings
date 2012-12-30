@@ -4,5 +4,6 @@
     // "python" : "/path/to/python",
 
     // additional arguments to pass to the daemon, see ipython_send.py for full list
-    "daemon_args":  [ "--server-timeout", "300" , "-v", "--log", "/Users/gareth/Library/Application Support/Sublime Text 2/Packages/IPython/daemon.log"]
+    // "-v", "--log", "C:\\Users\\Gareth Davis\\daemon.log"
+    "daemon_args":  [ "--server-timeout", "300" ]
 }
