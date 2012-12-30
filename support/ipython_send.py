@@ -23,7 +23,6 @@ import SocketServer
 from protocol import Connection, SocketDisconnected
 
 
-# utils
 
 verbose = False
 
@@ -33,6 +32,8 @@ class IPythonNotFoundException(Exception):
 
     def __str__(self):
         return repr(self.value)
+
+# utils
 
 def check_port_open(ip, port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -132,7 +133,7 @@ def get_response(km, msg_id):
                 "traceback" : extract_traceback(c['traceback']),
                 "error" : '{1}: {2}'.format(traceback, ename, evalue)
             }
-    return ("\n".join(out), error)
+    return (''.join(out), error)
 
     # return [m for m in msgs
             # if m['parent_header']['msg_id'] == msg_id]

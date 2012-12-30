@@ -29,9 +29,6 @@ def add_to_path(path):
 lib_folder = os.path.join(sublime.packages_path(), 'IPython', 'lib')
 add_to_path(lib_folder)
 
-
-print lib_folder
-print "\n".join(sys.path)
 # import protocol
 # reload(protocol)
 from protocol import Connection
@@ -116,7 +113,7 @@ class Client:
     def __init__(self, port = 48721):
         self.port = port
 
-    def execute(self, code):        
+    def execute(self, code, callback = None):        
 
         s = attempt_new_socket(self.port)
         try:
@@ -124,8 +121,12 @@ class Client:
             connection.write_message( 1, str(code))
             (msgtype, payload) = connection.read_message()
 
+            success = msgtype == 2
             print "[%s] [%s]" % (msgtype, payload)
-            return msgtype == 2
+            if callback is not None:
+                callback(success, payload)
+            
+            return success
         finally:
             s.close()
 
@@ -139,7 +140,8 @@ class SendToIpythonCommand(sublime_plugin.TextCommand):
         
         if not hasattr(self, 'output_view' ):
             self.output_view = self.view.window().get_output_panel("ipython")
-            # self.output_view.set("syntax", "Packages/IPython/ipython_output.tmLanaguage")
+            self.output_view.set_syntax_file(os.path.join(plugin_dir(),"ipython_output.tmLanguage"))
+            
 
         sel = self.view.sel()
         if sel[0]:
@@ -150,8 +152,20 @@ class SendToIpythonCommand(sublime_plugin.TextCommand):
 
         client = Client()
 
-        if client.execute(text):
+        if client.execute(text, callback = self.on_output):
             self.view.set_status( "ipython", "send to ipython - success" )
         else:
             self.view.set_status( "ipython", "send to ipython - failure" )
  
+
+    def on_output(self, success, payload):
+
+        self.output_view.set_read_only(False)
+        edit = self.output_view.begin_edit()
+        self.output_view.insert(edit, self.output_view.size(), payload)
+        self.output_view.end_edit(edit)
+        self.output_view.set_read_only(True)
+
+        self.output_view.show(self.output_view.size())
+                
+        self.view.window().run_command("show_panel", {"panel": "output.ipython"})
