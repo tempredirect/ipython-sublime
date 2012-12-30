@@ -6,6 +6,7 @@ import subprocess
 import socket
 import struct
 import time
+import threading
 
 
 if os.name == 'nt':
@@ -29,6 +30,8 @@ lib_folder = os.path.join(sublime.packages_path(), 'IPython', 'lib')
 add_to_path(lib_folder)
 
 
+print lib_folder
+print "\n".join(sys.path)
 # import protocol
 # reload(protocol)
 from protocol import Connection
@@ -47,7 +50,7 @@ def find_python(settings):
         else:
             raise RuntimeError("python setting points to non existing file [%s]" % python)
 
-    executable = 'python.exe' if os.name == 'nt' else 'python'
+    executable = 'pythonw.exe' if os.name == 'nt' else 'python'
     paths = os.environ.get("PATH").split(os.pathsep)
     for path in paths:
         python = os.path.join( os.path.expandvars(path), executable )
@@ -64,27 +67,36 @@ def start_server_process(port):
     python = find_python(settings)
 
     cmd = [ python, 
-            os.path.join( plugin_dir(), "support", "ipython_send.py"), "-s", "-p", str(port), "-d"
+            os.path.join( plugin_dir(), "support", "ipython_send.py"), "-s", "-p", str(port)
             ]
+
     if settings.has("daemon_args"):
         for arg in settings.get("daemon_args"):
             cmd.append(arg)
 
     print "starting server process [%s]" % ' '.join(cmd)
 
+    if os.name != 'nt':
+        cmd.append("--daemon")
+
+
     server_process = subprocess.Popen(cmd,
             stdout = subprocess.PIPE, stderr = subprocess.PIPE)    
 
-    (stdout,stderr) = server_process.communicate()
+    if os.name != 'nt':
+        (stdout,stderr) = server_process.communicate()
 
-    exitcode = server_process.wait()
-    
-    if exitcode != 0:
-        for out in [stdout, stderr]:
-            if out is not None:
-                print out
-        raise RuntimeError("Unable to start daemon process exitcode : %d" % exitcode)
-    
+        exitcode = server_process.wait()
+        
+        if exitcode != 0:
+            for out in [stdout, stderr]:
+                if out is not None:
+                    print out
+            raise RuntimeError("Unable to start daemon process exitcode : %d" % exitcode)
+    else:
+        t = threading.Thread(target = server_process.communicate)
+        t.daemon = True
+        t.start()
 
 def attempt_new_socket(port, start_server = True):
     print "attempt_new_socket(%d)" % port

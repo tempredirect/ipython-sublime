@@ -1,16 +1,17 @@
 #!/usr/bin/env python
 
 import sys
+from os import listdir
+from os.path import expanduser, join, dirname,abspath
 
-sys.path.append("../lib")
-
+sys.path.append(abspath(join(dirname(__file__),"..","lib")))
+print "\n".join(sys.path)
 import logging
 
 from IPython.zmq.blockingkernelmanager import BlockingKernelManager
 
 from json import loads
-from os import listdir
-from os.path import expanduser, join
+
 from threading import Thread
 from datetime import datetime
 from time import sleep

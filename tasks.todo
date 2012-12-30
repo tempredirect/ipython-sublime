@@ -1,0 +1,12 @@
+
+sublime commands:
+ ☐ output panel
+ ☐ question prompt
+
+execute command:
+ ☐ async execute
+ ☐ streaming output
+
+other:
+ ☐ handle no kernel found
+ 
