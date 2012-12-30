@@ -45,7 +45,7 @@ def find_python(settings):
         if os.path.exists(python):
             return settings.get("python")
         else:
-            raise RuntimeException("python setting points to non existing file [%s]" % python)
+            raise RuntimeError("python setting points to non existing file [%s]" % python)
 
     executable = 'python.exe' if os.name == 'nt' else 'python'
     paths = os.environ.get("PATH").split(os.pathsep)
@@ -54,7 +54,7 @@ def find_python(settings):
         if os.path.exists(python):
             return python
 
-    raise RuntimeException("unable to find [%s] in path [%s]" % (executable, os.environ.get("PATH")))
+    raise RuntimeError("unable to find [%s] in path [%s]" % (executable, os.environ.get("PATH")))
 
 def start_server_process(port):
     # print directory
@@ -83,7 +83,7 @@ def start_server_process(port):
         for out in [stdout, stderr]:
             if out is not None:
                 print out
-        raise RuntimeException("Unable to start daemon process exitcode : %d" % exitcode)
+        raise RuntimeError("Unable to start daemon process exitcode : %d" % exitcode)
     
 
 def attempt_new_socket(port, start_server = True):
