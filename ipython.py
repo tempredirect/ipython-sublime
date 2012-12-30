@@ -39,17 +39,37 @@ def load_settings():
 def plugin_dir():
     return os.path.join(sublime.packages_path(), 'IPython')
 
+def find_python(settings):    
+    if settings.has("python"):
+        python = settings.get("python")
+        if os.path.exists(python):
+            return settings.get("python")
+        else:
+            raise RuntimeException("python setting points to non existing file [%s]" % python)
+
+    executable = 'python.exe' if os.name == 'nt' else 'python'
+    paths = os.environ.get("PATH").split(os.pathsep)
+    for path in paths:
+        python = os.path.join( os.path.expandvars(path), executable )
+        if os.path.exists(python):
+            return python
+
+    raise RuntimeException("unable to find [%s] in path [%s]" % (executable, os.environ.get("PATH")))
+
 def start_server_process(port):
     # print directory
     # shell out to the 2.7 python included in the OS
     settings = load_settings()
 
-    cmd = [ "/usr/bin/python", 
+    python = find_python(settings)
+
+    cmd = [ python, 
             os.path.join( plugin_dir(), "support", "ipython_send.py"), "-s", "-p", str(port), "-d"
             ]
     if settings.has("daemon_args"):
         for arg in settings.get("daemon_args"):
             cmd.append(arg)
+
     print "starting server process [%s]" % ' '.join(cmd)
 
     server_process = subprocess.Popen(cmd,
@@ -58,10 +78,12 @@ def start_server_process(port):
     (stdout,stderr) = server_process.communicate()
 
     exitcode = server_process.wait()
-    print "Daemon status: %d" % exitcode
-    for out in [stdout, stderr]:
-        if out is not None:
-            print out
+    
+    if exitcode != 0:
+        for out in [stdout, stderr]:
+            if out is not None:
+                print out
+        raise RuntimeException("Unable to start daemon process exitcode : %d" % exitcode)
     
 
 def attempt_new_socket(port, start_server = True):
@@ -71,7 +93,7 @@ def attempt_new_socket(port, start_server = True):
         s.connect(("127.0.0.1", port))
         return s
     except socket.error as err:
-        if err.errno in [22, 61] and start_server: # invalid arg, connect refused
+        if start_server: 
             start_server_process(port)
             time.sleep(1)
             return attempt_new_socket( port, start_server = False )
