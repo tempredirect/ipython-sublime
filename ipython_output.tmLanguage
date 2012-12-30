@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>fileTypes</key>
+	<array>
+		<string></string>
+	</array>
+	<key>name</key>
+	<string>IPython Output</string>
+	<key>patterns</key>
+	<array>
+		<dict>
+			<key>name</key>
+			<string>keyword.source.ipython_output</string>
+			<key>match</key>
+			<string>^.+:</string>
+			<key>comment</key>
+			<string>IPython output section</string>
+		</dict>
+	</array>
+	<key>scopeName</key>
+	<string>source.ipython_output</string>
+	<key>uuid</key>
+	<string>2073b253-97e7-4469-8b7a-6577eafd083f</string>
+</dict>
+</plist>

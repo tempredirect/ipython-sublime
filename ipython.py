@@ -1,4 +1,12 @@
 import sys
+import os
+import sublime, sublime_plugin
+
+import subprocess
+import socket
+import struct
+import time
+
 
 if os.name == 'nt':
     from ctypes import windll, create_unicode_buffer
@@ -20,48 +28,55 @@ def add_to_path(path):
 lib_folder = os.path.join(sublime.packages_path(), 'IPython', 'lib')
 add_to_path(lib_folder)
 
-import sublime, sublime_plugin
 
-import subprocess
-import os  
-import socket
-import struct
-import time
-
-import protocol
-reload(protocol)
+# import protocol
+# reload(protocol)
 from protocol import Connection
 
+def load_settings():
+    return sublime.load_settings("IPython.sublime-settings")
+
+def plugin_dir():
+    return os.path.join(sublime.packages_path(), 'IPython')
 
 def start_server_process(port):
-    directory = os.path.join(sublime.packages_path(), 'IPython')
-    print directory
+    # print directory
     # shell out to the 2.7 python included in the OS
-    server_process = subprocess.Popen(["/usr/bin/python", 
-            os.path.join( directory, "support", "ipython_send.py"), "-s", "-p", str(port), "-d",
-            "--log", os.path.join( directory, "daemon.log") ],
+    settings = load_settings()
+
+    cmd = [ "/usr/bin/python", 
+            os.path.join( plugin_dir(), "support", "ipython_send.py"), "-s", "-p", str(port), "-d"
+            ]
+    if settings.has("daemon_args"):
+        for arg in settings.get("daemon_args"):
+            cmd.append(arg)
+    print "starting server process [%s]" % ' '.join(cmd)
+
+    server_process = subprocess.Popen(cmd,
             stdout = subprocess.PIPE, stderr = subprocess.PIPE)    
 
     (stdout,stderr) = server_process.communicate()
 
-    print stdout
-    print stderr
-
+    exitcode = server_process.wait()
+    print "Daemon status: %d" % exitcode
+    for out in [stdout, stderr]:
+        if out is not None:
+            print out
+    
 
 def attempt_new_socket(port, start_server = True):
+    print "attempt_new_socket(%d)" % port
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         s.connect(("127.0.0.1", port))
         return s
     except socket.error as err:
-        if err.errno in [22, 61]: # invalid arg, connect refused
+        if err.errno in [22, 61] and start_server: # invalid arg, connect refused
             start_server_process(port)
             time.sleep(1)
             return attempt_new_socket( port, start_server = False )
         else:
             raise err
-
-
 
 class Client:   
     def __init__(self, port = 48721):
@@ -87,7 +102,10 @@ class SendToIpythonCommand(sublime_plugin.TextCommand):
             send the current selection (or whole buffer if no selection)
             to the ipython process.
         """ 
-        settings = sublime.load_settings("IPython.sublime-settings")
+        
+        if not hasattr(self, 'output_view' ):
+            self.output_view = self.view.window().get_output_panel("ipython")
+            # self.output_view.set("syntax", "Packages/IPython/ipython_output.tmLanaguage")
 
         sel = self.view.sel()
         if sel[0]:
@@ -103,23 +121,3 @@ class SendToIpythonCommand(sublime_plugin.TextCommand):
         else:
             self.view.set_status( "ipython", "send to ipython - failure" )
  
-    def dummy(self):
-        directory = os.path.dirname(os.path.realpath(__file__))
-
-        # shell out to the 2.7 python included in the OS
-        p = subprocess.Popen(["/usr/bin/python", 
-                os.path.join( directory, "support", "ipython_send.py"), "-v", "-c", text], 
-                stdin = subprocess.PIPE, stdout = subprocess.PIPE)
-
-        (stdoutdata, stderrdata) = p.communicate()
-        exitval = p.wait()
-
-        if exitval != 0 :
-
-            if stdoutdata is not None:
-                print stdoutdata
-            if stderrdata is not None:
-                print stderrdata
-
-        else:
-            self.view.set_status( "ipython", "send to ipython - success" )

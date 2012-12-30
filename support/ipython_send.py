@@ -7,14 +7,20 @@ sys.path.append("../lib")
 import logging
 
 from IPython.zmq.blockingkernelmanager import BlockingKernelManager
+
 from json import loads
 from os import listdir
 from os.path import expanduser, join
+from threading import Thread
+from datetime import datetime
+from time import sleep
+
 import re
 import socket
-import struct
+import SocketServer
 
-from protocol import Connection
+from protocol import Connection, SocketDisconnected
+
 
 # utils
 
@@ -83,8 +89,11 @@ def extract_traceback(traceback):
     strip = re.compile('\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]')
     tb = [strip.sub('',t) for t in traceback]
     if len(tb) == 1:
+        # logging.debug(tb[0])
+        line = -1
         m = re.search(', line (\d+)', tb[0])
-        line = int(m.group(1))
+        if m:
+            line = int(m.group(1))
         return [('<ipython-input>', line, tb[0])]
     else:
         result = []
@@ -152,51 +161,60 @@ def pretty(d, indent=0):
       else:
          logging.info( '\t' * (indent+1) + str(value))
 
-class Server:
 
-    def __init__(self, options):
-        self.port = options.port        
-        self.serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+class ThreadedTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
+    
+    timeout = 300
+    allow_reuse_address = True   
 
 
-    def handle_client(self, clientsocket):
-
-        connection = Connection(clientsocket, verbose = verbose)
+last_request = None
+class IPythonRequestHandler(SocketServer.BaseRequestHandler):
+    def handle(self):
+        global last_request
+        connection = Connection(self.request, verbose = verbose)
         try:
             while 1:
                 (msgtype, msg) = connection.read_message()
+                last_request = datetime.now()
+
                 logging.debug( "[%i] [%s]" % (msgtype, msg))
                 if msgtype == 1:
-                    # execute code
-                    
+                    # execute code                    
                     km = initialize_km()
                     out, error = execute(km, msg)
                     logging.debug( "[complete] [%s] [%s]" % (out, error))
 
                     if error is None:
-                        connection.write_message( 2, out)
+                        connection.write_message( 2, out )
                     else:
-                        connection.write_message( 3, error['error'])
+                        connection.write_message( 3, error['error'] )
                 else:
                     raise RuntimeError("unknown msgtype : %s" % str(msgtype))
-        except Exception as e:
-            logging.error( str(e))
-            clientsocket.close()
-            
+        except SocketDisconnected:
+            logging.info("Client disconnected")
 
-    def run(self):
-        serversocket = self.serversocket
-        serversocket.bind(("127.0.0.1", options.port))
-        serversocket.listen(5)
-        logging.info( "Listening on %s" % str(options.port))
-        try:
-            while 1:
-                (clientsocket,address) = serversocket.accept()
-                self.handle_client(clientsocket)
-        except KeyboardInterrupt as ki:
-            logging.warning( "Exiting" )
-            pass
+
+def run_server(options):
+    global last_request
+    last_request = datetime.now()
+
+    server = ThreadedTCPServer(("127.0.0.1", options.port), IPythonRequestHandler)
+    logging.info("Listing on %d" % options.port)
+    if options.server_timeout > 0:
+        thread = Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+        while 1:
+            now = datetime.now()
+            delta = now - last_request
+            if delta.seconds > options.server_timeout:
+                logging.warn("Server is timed out. exiting")
+                server.shutdown()
+                sys.exit(0)
+            sleep(1)
+    else:
+        server.serve_forever()
 
 def main(options):
     
@@ -211,8 +229,7 @@ def main(options):
 
 
     if options.server:
-        server = Server(options)
-        server.run()
+        run_server(options)
     else:
         # print options
         if options.code is not None:
@@ -248,6 +265,8 @@ if __name__ == '__main__':
                             help = 'Ignore -c and become a server listening on a port')
     parser.add_option('--log', dest = 'logfile', default=None, 
                             help = 'optional Log file')
+    parser.add_option('--server-timeout', dest = 'server_timeout', default=0,  type='int',
+                            help = 'number of seconds after no requests the processed the server will terminate')
     (options, args) = parser.parse_args()
 
     if options.daemon:

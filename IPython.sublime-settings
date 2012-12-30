@@ -2,6 +2,7 @@
     // path to the correct instance of python to use, i.e. can load the
     // ipython package, if empty will default to searching common locations
     "python" : "",
-    // can be 'panel' or 'status'
-    "on_error" : "panel"
+
+    // additional arguments to pass to the daemon, see ipython_send.py for full list
+    "daemon_args":  [ "--server-timeout", "300" , "-v", "--log", "/Users/gareth/Library/Application Support/Sublime Text 2/Packages/IPython/daemon.log"]
 }
